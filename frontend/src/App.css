@@ -670,14 +670,56 @@
 }
 
 /* Complete Section */
-.complete-box {
-  background: #1a1a1a;
-  border: 1px solid #2d2d2d;
-  border-radius: 16px;
-  padding: 60px 48px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  text-align: center;
-  animation: scaleIn 0.5s ease-out;
+.complete-section {
+  width: 100%;
+}
+
+.complete-layout {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 32px;
+  height: calc(100vh - 250px);
+  min-height: 600px;
+}
+
+.complete-layout .document-preview-panel {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.complete-layout .document-preview-content {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  min-height: 0; /* Important for flex scrolling */
+}
+
+.complete-actions {
+  display: flex;
+  justify-content: center;
+  padding-top: 24px;
+}
+
+/* Highlighting for replaced values */
+.complete-layout .docx-wrapper .docx-preview p[style*="background-color: rgb(255, 255, 0)"],
+.complete-layout .docx-wrapper .docx-preview span[style*="background-color: rgb(255, 255, 0)"],
+.complete-layout .docx-wrapper .docx-preview td[style*="background-color: rgb(255, 255, 0)"],
+.complete-layout .docx-wrapper .docx-preview div[style*="background-color: rgb(255, 255, 0)"] {
+  background-color: #ffff00 !important;
+}
+
+@media (max-width: 1024px) {
+  .complete-layout {
+    flex-direction: column;
+    height: auto;
+  }
+  
+  .complete-layout .document-preview-panel {
+    flex: 1;
+    min-height: 400px;
+  }
 }
 
 @keyframes scaleIn {

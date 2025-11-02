@@ -428,7 +428,8 @@ async def complete_document(session_id: str = Query(...), force: bool = Query(Fa
     return {
         "session_id": session_id,
         "completed_text": completed_text,
-        "download_url": f"/download/{session_id}"
+        "download_url": f"/download/{session_id}",
+        "replacements": replacements  # Include replacements for frontend highlighting
     }
 
 @app.get("/document/{session_id}")

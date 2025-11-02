@@ -19,7 +19,10 @@ function App() {
   const [sending, setSending] = useState(false);
   const [documentLoaded, setDocumentLoaded] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(0.75);
+  const [completedZoomLevel, setCompletedZoomLevel] = useState(0.75);
+  const [replacements, setReplacements] = useState({}); // Store replacements for highlighting
   const documentPreviewRef = useRef(null);
+  const completedDocumentPreviewRef = useRef(null);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -158,6 +161,145 @@ function App() {
     }
   };
 
+  // Function to highlight replacements in completed document
+  const highlightReplacements = (replacementsData) => {
+    if (!completedDocumentPreviewRef.current || !replacementsData || Object.keys(replacementsData).length === 0) return;
+    
+    try {
+      // Get all replacement values as normalized strings
+      const replacementValues = Object.values(replacementsData)
+        .map(v => String(v).trim())
+        .filter(v => v.length > 0);
+      
+      if (replacementValues.length === 0) return;
+      
+      // Create a set for faster lookup
+      const replacementSet = new Set(replacementValues.map(v => v.toLowerCase()));
+      
+      // Find and highlight all replacement values in the completed document
+      const walker = document.createTreeWalker(
+        completedDocumentPreviewRef.current,
+        NodeFilter.SHOW_TEXT,
+        null
+      );
+      
+      const textNodes = [];
+      let node;
+      while (node = walker.nextNode()) {
+        if (node.textContent.trim().length > 0) {
+          textNodes.push(node);
+        }
+      }
+      
+      // Highlight nodes containing replacement values
+      textNodes.forEach(textNode => {
+        const text = textNode.textContent.trim();
+        if (!text || text.length < 1) return;
+        
+        // Split text into words for precise matching
+        // Remove punctuation and split by whitespace
+        const words = text
+          .replace(/[.,;:!?()[\]{}'"`]/g, ' ') // Replace punctuation with spaces
+          .split(/\s+/) // Split by whitespace
+          .map(w => w.trim())
+          .filter(w => w.length > 0);
+        
+        // Check if any word exactly matches a replacement value
+        const hasExactMatch = words.some(word => {
+          const normalizedWord = word.toLowerCase();
+          return replacementSet.has(normalizedWord);
+        });
+        
+        // Also check for exact text match (for values that might be multi-word or have special characters)
+        const exactTextMatch = replacementValues.some(replacement => {
+          const normalizedText = text.toLowerCase();
+          const normalizedReplacement = replacement.toLowerCase();
+          // Exact match only - no partial matches
+          return normalizedText === normalizedReplacement;
+        });
+        
+        if (hasExactMatch || exactTextMatch) {
+          // Find parent element to highlight
+          let parent = textNode.parentElement;
+          while (parent && parent !== completedDocumentPreviewRef.current) {
+            if (parent.tagName === 'P' || parent.tagName === 'TD' || parent.tagName === 'SPAN' || parent.tagName === 'DIV') {
+              // Check if already highlighted
+              const currentBg = window.getComputedStyle(parent).backgroundColor;
+              if (currentBg !== 'rgb(255, 255, 0)' && currentBg !== 'yellow') {
+                parent.style.backgroundColor = '#ffff00';
+                parent.style.padding = '2px 4px';
+                parent.style.borderRadius = '2px';
+              }
+              break;
+            }
+            parent = parent.parentElement;
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error highlighting replacements:', error);
+    }
+  };
+  
+  // Enhanced function to render documents and highlight replacements
+  const renderDocumentsWithHighlighting = async (originalBlob, completedBlob, replacementsData) => {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        if (documentPreviewRef.current) {
+          docx.renderAsync(originalBlob, documentPreviewRef.current, null, {
+            className: 'docx-preview',
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            ignoreFonts: false,
+            breakPages: true,
+            ignoreLastRenderedPageBreak: true,
+            experimental: false,
+            trimXmlDeclaration: true,
+            useBase64URL: false,
+            useMathMLPolyfill: true,
+            showChanges: false,
+            showComments: false,
+            showInserted: true,
+            showDeleted: false,
+            showFormattingChanges: true
+          }).then(() => {
+            if (completedDocumentPreviewRef.current) {
+              docx.renderAsync(completedBlob, completedDocumentPreviewRef.current, null, {
+                className: 'docx-preview',
+                inWrapper: true,
+                ignoreWidth: false,
+                ignoreHeight: false,
+                ignoreFonts: false,
+                breakPages: true,
+                ignoreLastRenderedPageBreak: true,
+                experimental: false,
+                trimXmlDeclaration: true,
+                useBase64URL: false,
+                useMathMLPolyfill: true,
+                showChanges: false,
+                showComments: false,
+                showInserted: true,
+                showDeleted: false,
+                showFormattingChanges: true
+              }).then(() => {
+                // After both render, highlight replacements
+                setTimeout(() => {
+                  highlightReplacements(replacementsData);
+                  resolve();
+                }, 500);
+              });
+            } else {
+              resolve();
+            }
+          });
+        } else {
+          resolve();
+        }
+      }, 100);
+    });
+  };
+
   const completeDocument = async (sessionIdToUse = null) => {
     try {
       const idToUse = sessionIdToUse || sessionId;
@@ -171,8 +313,33 @@ function App() {
       const response = await axios.post(`${API_BASE_URL}/complete-document?session_id=${idToUse}`);
 
       setCompletedText(response.data.completed_text);
+      setReplacements(response.data.replacements || {}); // Store replacements for highlighting
       setGenerating(false);
       setStep('complete');
+      
+      // Fetch and render both documents with highlighting
+      try {
+        // Render original document
+        const originalDocResponse = await axios.get(`${API_BASE_URL}/document/${idToUse}`, {
+          responseType: 'blob'
+        });
+        const originalBlob = new Blob([originalDocResponse.data], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        });
+        
+        // Render completed document
+        const completedDocResponse = await axios.get(`${API_BASE_URL}/download/${idToUse}`, {
+          responseType: 'blob'
+        });
+        const completedBlob = new Blob([completedDocResponse.data], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        });
+        
+        // Render documents with highlighting
+        await renderDocumentsWithHighlighting(originalBlob, completedBlob, response.data.replacements || {});
+      } catch (error) {
+        console.error('Error fetching documents for preview:', error);
+      }
     } catch (error) {
       console.error('Error completing document:', error);
       setGenerating(false);
@@ -235,8 +402,13 @@ function App() {
     setCompletedText('');
     setDocumentLoaded(false);
     setZoomLevel(0.75);
+    setCompletedZoomLevel(0.75);
+    setReplacements({});
     if (documentPreviewRef.current) {
       documentPreviewRef.current.innerHTML = '';
+    }
+    if (completedDocumentPreviewRef.current) {
+      completedDocumentPreviewRef.current.innerHTML = '';
     }
   };
 
@@ -248,8 +420,33 @@ function App() {
       // Try to complete the document (with force=true to allow partial replacements)
       const response = await axios.post(`${API_BASE_URL}/complete-document?session_id=${sessionId}&force=true`);
       setCompletedText(response.data.completed_text);
+      setReplacements(response.data.replacements || {}); // Store replacements for highlighting
       setGenerating(false);
       setStep('complete');
+      
+      // Fetch and render both documents with highlighting
+      try {
+        // Render original document
+        const originalDocResponse = await axios.get(`${API_BASE_URL}/document/${sessionId}`, {
+          responseType: 'blob'
+        });
+        const originalBlob = new Blob([originalDocResponse.data], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        });
+        
+        // Render completed document
+        const completedDocResponse = await axios.get(`${API_BASE_URL}/download/${sessionId}`, {
+          responseType: 'blob'
+        });
+        const completedBlob = new Blob([completedDocResponse.data], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        });
+        
+        // Render documents with highlighting
+        await renderDocumentsWithHighlighting(originalBlob, completedBlob, response.data.replacements || {});
+      } catch (error) {
+        console.error('Error fetching documents for preview:', error);
+      }
     } catch (error) {
       console.error('Error completing document:', error);
       setGenerating(false);
@@ -454,31 +651,112 @@ function App() {
 
         {step === 'complete' && (
           <div className="complete-section">
-            <div className="complete-box">
-              <h2>Document Completed</h2>
-              <p>Your document has been filled in and is ready to download.</p>
-
-              <div className="completed-text-preview">
-                <h3>Preview:</h3>
-                <div className="text-content">
-                  {completedText.split('\n').map((line, i) => (
-                    <p key={i}>{line}</p>
-                  ))}
+            <div className="complete-layout">
+              {/* Original Document Side */}
+              <div className="document-preview-panel">
+                <div className="preview-header">
+                  <h3>Original Document</h3>
+                  <button
+                    onClick={handleDownloadOriginal}
+                    disabled={downloading}
+                    className="download-preview-button"
+                    title="Download original document"
+                  >
+                    Download
+                  </button>
+                </div>
+                <div className="document-preview-content">
+                  <div 
+                    ref={documentPreviewRef} 
+                    className="docx-wrapper"
+                    style={{
+                      transform: `scale(${zoomLevel})`,
+                      transformOrigin: 'top left',
+                      padding: '20px 40px',
+                      backgroundColor: '#ffffff',
+                      color: '#000000',
+                      width: `${100 / zoomLevel}%`,
+                      minHeight: `${100 / zoomLevel}%`
+                    }}
+                  >
+                  </div>
+                  <div className="zoom-controls">
+                    <button
+                      className="zoom-button"
+                      onClick={() => setZoomLevel(Math.max(0.5, zoomLevel - 0.1))}
+                      title="Zoom out"
+                    >
+                      −
+                    </button>
+                    <span className="zoom-button" style={{ cursor: 'default', pointerEvents: 'none' }}>
+                      {Math.round(zoomLevel * 100)}%
+                    </span>
+                    <button
+                      className="zoom-button"
+                      onClick={() => setZoomLevel(Math.min(1.5, zoomLevel + 0.1))}
+                      title="Zoom in"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <div className="actions">
-                <button
-                  onClick={handleDownloadDocx}
-                  disabled={downloading}
-                  className="download-button"
-                >
-                  {downloading ? 'Downloading...' : 'Download DOCX'}
-                </button>
-                <button onClick={handleReset} className="reset-button">
-                  Start New Document
-                </button>
+              {/* Completed Document Side */}
+              <div className="document-preview-panel">
+                <div className="preview-header">
+                  <h3>Completed Document</h3>
+                  <button
+                    onClick={handleDownloadDocx}
+                    disabled={downloading}
+                    className="download-preview-button"
+                    title="Download completed document"
+                  >
+                    Download
+                  </button>
+                </div>
+                <div className="document-preview-content">
+                  <div 
+                    ref={completedDocumentPreviewRef} 
+                    className="docx-wrapper"
+                    style={{
+                      transform: `scale(${completedZoomLevel})`,
+                      transformOrigin: 'top left',
+                      padding: '20px 40px',
+                      backgroundColor: '#ffffff',
+                      color: '#000000',
+                      width: `${100 / completedZoomLevel}%`,
+                      minHeight: `${100 / completedZoomLevel}%`
+                    }}
+                  >
+                  </div>
+                  <div className="zoom-controls">
+                    <button
+                      className="zoom-button"
+                      onClick={() => setCompletedZoomLevel(Math.max(0.5, completedZoomLevel - 0.1))}
+                      title="Zoom out"
+                    >
+                      −
+                    </button>
+                    <span className="zoom-button" style={{ cursor: 'default', pointerEvents: 'none' }}>
+                      {Math.round(completedZoomLevel * 100)}%
+                    </span>
+                    <button
+                      className="zoom-button"
+                      onClick={() => setCompletedZoomLevel(Math.min(1.5, completedZoomLevel + 0.1))}
+                      title="Zoom in"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
               </div>
+            </div>
+            
+            <div className="complete-actions">
+              <button onClick={handleReset} className="reset-button">
+                Start New Document
+              </button>
             </div>
           </div>
         )}
