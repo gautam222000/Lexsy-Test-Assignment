@@ -473,10 +473,6 @@ function App() {
   return (
     <div className="App">
       <div className="container">
-        <header className="header">
-          <h1>Legal Document Filler</h1>
-          <p>Upload your document and fill in placeholders through conversation</p>
-        </header>
 
         {step === 'upload' && (
           <div className="upload-section">
@@ -761,6 +757,10 @@ function App() {
           </div>
         )}
       </div>
+      
+      <footer className="app-footer">
+        Lexsy Software Engineer Task by Gautam Trikkadeeri
+      </footer>
     </div>
   );
 }

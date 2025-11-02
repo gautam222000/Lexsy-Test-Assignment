@@ -73,8 +73,13 @@ Your workflow:
 6. ONLY when you have gathered ALL information from the user (after multiple questions and answers), say EXACTLY: "I have all the information needed. Let me complete the document now."
 
 7. Then provide a JSON response with:
-   - "placeholders": List of all placeholders found with their exact names as they appear in the document
-   - "replacements": Object mapping placeholder names EXACTLY as they appear in the document to their values (ONLY use values the user provided)
+   - "placeholders": List of all placeholders found with semantic_name, literal text, and context
+   - "replacements": Object mapping semantic names to their values (ONLY use values the user provided)
+
+CRITICAL FOR PLACEHOLDERS:
+- Each placeholder MUST have a "semantic_name" (like "PURCHASE_AMOUNT", "CLIENT_NAME") to distinguish identical-looking placeholders
+- Each placeholder MUST have a "literal" field with the EXACT text as it appears in the document (e.g., "[_____________]", "$[AMOUNT]", "{{DATE}}")
+- Include "context" field with surrounding text to help disambiguate identical literals
 
 Example conversation flow:
 - You: "I've analyzed your document and see it's a service agreement. I found several placeholders that need to be filled. Let me start by asking: What is the client's full legal name?"
@@ -84,11 +89,28 @@ Example conversation flow:
 - You: "I have all the information needed. Let me complete the document now."
 {
   "placeholders": [
-    {"name": "CLIENT_NAME", "type": "string", "context": "Client's full name"},
-    {"name": "DATE", "type": "date", "context": "Date of signing"}
+    {
+      "semantic_name": "CLIENT_NAME",
+      "literal": "[CLIENT_NAME]",
+      "type": "string",
+      "context": "Client's full name"
+    },
+    {
+      "semantic_name": "PURCHASE_AMOUNT",
+      "literal": "$[_____________]",
+      "type": "number",
+      "context": "payment by [Investor Name] of $[_____________]"
+    },
+    {
+      "semantic_name": "DATE",
+      "literal": "[DATE]",
+      "type": "date",
+      "context": "Date of signing"
+    }
   ],
   "replacements": {
     "CLIENT_NAME": "John Doe",
+    "PURCHASE_AMOUNT": "5000",
     "DATE": "2024-01-15"
   }
 }
@@ -101,7 +123,9 @@ IMPORTANT:
 - Make questions SPECIFIC and RELEVANT to the document context
 - Understand the document's purpose before asking questions
 - The replacement mapping should be returned as valid JSON, no markdown formatting
-- Placeholder names in replacements MUST match EXACTLY how they appear in the document (including brackets, braces, etc.)""",
+- "semantic_name" in replacements MUST match "semantic_name" in placeholders array
+- "literal" field MUST contain the EXACT text as it appears in the document (including brackets, braces, underscores, dollar signs, etc.)
+- For identical-looking placeholders (like multiple "[_____________]"), use semantic_name to distinguish them, but provide the exact literal text for each""",
             "model": self.model,
             "tools": [{"type": "file_search"}]
         }
@@ -137,7 +161,12 @@ IMPORTANT:
 Format your response as JSON with this structure:
 {
   "placeholders": [
-    {"name": "PLACEHOLDER_NAME", "type": "string", "context": "Description"},
+    {
+      "semantic_name": "PLACEHOLDER_NAME",
+      "literal": "[EXACT_TEXT_FROM_DOCUMENT]",
+      "type": "string",
+      "context": "Description or surrounding text"
+    },
     ...
   ],
   "replacements": {
@@ -146,9 +175,11 @@ Format your response as JSON with this structure:
   }
 }
 
-Important:
+CRITICAL:
 - Include ONLY values that the user has actually provided
-- Use placeholder names EXACTLY as they appear in the document (with brackets/braces)
+- "semantic_name" should be a unique identifier (like "PURCHASE_AMOUNT")
+- "literal" MUST be the EXACT text as it appears in the document (e.g., "[_____________]", "$[AMOUNT]", "{{DATE}}")
+- "replacements" uses semantic_name as keys, NOT literal text
 - If you don't have a value for a placeholder, do NOT include it in replacements
 - Return valid JSON, no markdown formatting"""
         

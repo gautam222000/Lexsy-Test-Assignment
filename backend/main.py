@@ -316,16 +316,17 @@ async def complete_document(session_id: str = Query(...), force: bool = Query(Fa
     
     # First check if replacements are already stored
     replacements = session_data.get("replacements", {})
+    placeholders_list = session_data.get("placeholders") or []
     
     # If not stored, try to extract from conversation
-    if not replacements and thread_id:
+    if (not replacements or not placeholders_list) and thread_id:
         print(f"[DEBUG] No replacements in session_data, trying to extract from thread {thread_id}")
         mapping = gpt_service.extract_replacement_mapping(thread_id)
         if mapping:
             replacements = mapping.get("replacements", {})
+            placeholders_list = mapping.get("placeholders", [])
             session_data["replacements"] = replacements
-            if "placeholders" in mapping:
-                session_data["placeholders"] = mapping["placeholders"]
+            session_data["placeholders"] = placeholders_list
         else:
             # If force=True and no replacements found, ask GPT to provide what it has
             if force:
@@ -335,9 +336,9 @@ async def complete_document(session_id: str = Query(...), force: bool = Query(Fa
                     mapping = gpt_service.request_partial_replacements(thread_id, assistant_id)
                     if mapping:
                         replacements = mapping.get("replacements", {})
+                        placeholders_list = mapping.get("placeholders", [])
                         session_data["replacements"] = replacements
-                        if "placeholders" in mapping:
-                            session_data["placeholders"] = mapping["placeholders"]
+                        session_data["placeholders"] = placeholders_list
                         print(f"[DEBUG] Got partial replacements: {list(replacements.keys())}")
                     else:
                         print("[DEBUG] GPT did not provide replacements")
@@ -361,6 +362,18 @@ async def complete_document(session_id: str = Query(...), force: bool = Query(Fa
     print(f"[DEBUG] Using replacements: {replacements}")
     print(f"[DEBUG] Replacement keys: {list(replacements.keys())}")
     
+    # Build mapping from semantic_name to literal text
+    semantic_to_literal = {}
+    if placeholders_list:
+        for placeholder in placeholders_list:
+            semantic_name = placeholder.get("semantic_name") or placeholder.get("name")  # Support both formats for backward compatibility
+            literal = placeholder.get("literal")
+            if semantic_name and literal:
+                semantic_to_literal[semantic_name] = literal
+                print(f"[DEBUG] Mapped semantic_name '{semantic_name}' -> literal '{literal}'")
+    else:
+        print("[WARNING] No placeholders list found, falling back to format-based replacement")
+    
     # Load the original document
     doc = docx.Document(original_docx_path)
     
@@ -372,37 +385,54 @@ async def complete_document(session_id: str = Query(...), force: bool = Query(Fa
             sample_text.append(para.text[:200])
             print(f"[DEBUG] Para {i}: {para.text[:200]}")
     
-    # Debug: Try to find any placeholder patterns in the document
-    import re
-    all_text = '\n'.join([para.text for para in doc.paragraphs])
-    placeholder_patterns_found = re.findall(r'\[([A-Z_]+)\]|{{([A-Z_]+)}}|{{{{([A-Z_]+)}}}}|<([A-Z_]+)>', all_text)
-    print(f"[DEBUG] Placeholder patterns found in document: {set([p[0] or p[1] or p[2] or p[3] for p in placeholder_patterns_found if p[0] or p[1] or p[2] or p[3]])}")
-    
     # Replace placeholders in paragraphs
     replacements_applied = 0
     for paragraph in doc.paragraphs:
-        for placeholder_name, replacement in replacements.items():
-            formats_to_try = get_placeholder_formats(placeholder_name)
-            for fmt in formats_to_try:
-                if fmt in paragraph.text:
-                    print(f"[DEBUG] Found placeholder '{fmt}' in paragraph: {paragraph.text[:50]}...")
-                    replace_text_in_paragraph(paragraph, fmt, replacement)
+        for semantic_name, replacement in replacements.items():
+            # Try to get literal text from placeholders mapping
+            literal_text = semantic_to_literal.get(semantic_name)
+            
+            if literal_text:
+                # Use literal text directly
+                if literal_text in paragraph.text:
+                    print(f"[DEBUG] Found literal placeholder '{literal_text}' in paragraph: {paragraph.text[:50]}...")
+                    replace_text_in_paragraph(paragraph, literal_text, replacement)
                     replacements_applied += 1
-                    break
+            else:
+                # Fallback to format-based replacement (for backward compatibility)
+                print(f"[DEBUG] No literal found for '{semantic_name}', using format-based replacement")
+                formats_to_try = get_placeholder_formats(semantic_name)
+                for fmt in formats_to_try:
+                    if fmt in paragraph.text:
+                        print(f"[DEBUG] Found placeholder '{fmt}' in paragraph: {paragraph.text[:50]}...")
+                        replace_text_in_paragraph(paragraph, fmt, replacement)
+                        replacements_applied += 1
+                        break
     
     # Replace placeholders in tables
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 for paragraph in cell.paragraphs:
-                    for placeholder_name, replacement in replacements.items():
-                        formats_to_try = get_placeholder_formats(placeholder_name)
-                        for fmt in formats_to_try:
-                            if fmt in paragraph.text:
-                                print(f"[DEBUG] Found placeholder '{fmt}' in table cell")
-                                replace_text_in_paragraph(paragraph, fmt, replacement)
+                    for semantic_name, replacement in replacements.items():
+                        # Try to get literal text from placeholders mapping
+                        literal_text = semantic_to_literal.get(semantic_name)
+                        
+                        if literal_text:
+                            # Use literal text directly
+                            if literal_text in paragraph.text:
+                                print(f"[DEBUG] Found literal placeholder '{literal_text}' in table cell")
+                                replace_text_in_paragraph(paragraph, literal_text, replacement)
                                 replacements_applied += 1
-                                break
+                        else:
+                            # Fallback to format-based replacement (for backward compatibility)
+                            formats_to_try = get_placeholder_formats(semantic_name)
+                            for fmt in formats_to_try:
+                                if fmt in paragraph.text:
+                                    print(f"[DEBUG] Found placeholder '{fmt}' in table cell")
+                                    replace_text_in_paragraph(paragraph, fmt, replacement)
+                                    replacements_applied += 1
+                                    break
     
     print(f"[DEBUG] Total replacements applied: {replacements_applied}")
     
