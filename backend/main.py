@@ -34,9 +34,16 @@ def get_placeholder_formats(placeholder: str) -> List[str]:
 app = FastAPI()
 
 # CORS middleware
+# Get allowed origins from environment or use defaults
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+# Add Render frontend URL if provided
+render_frontend_url = os.getenv("RENDER_FRONTEND_URL")
+if render_frontend_url:
+    allowed_origins.append(render_frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
