@@ -111,7 +111,28 @@ function App() {
       // GPT's first question is already displayed above from the upload response
     } catch (error) {
       console.error('Upload error:', error);
-      alert('Error uploading file: ' + (error.response?.data?.detail || error.message));
+      console.error('Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        headers: error.response?.headers,
+        config: error.config
+      });
+      
+      let errorMessage = 'Error uploading file: ';
+      if (error.response?.data?.detail) {
+        errorMessage += error.response.data.detail;
+      } else if (error.message) {
+        errorMessage += error.message;
+      } else if (error.code === 'ECONNABORTED') {
+        errorMessage += 'Request timed out. The server took too long to respond.';
+      } else if (error.code === 'ERR_NETWORK') {
+        errorMessage += 'Network error. Please check your connection and try again.';
+      } else {
+        errorMessage += 'Unknown error occurred.';
+      }
+      
+      alert(errorMessage);
     } finally {
       setUploading(false);
     }

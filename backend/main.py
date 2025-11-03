@@ -39,7 +39,12 @@ allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://loc
 # Add Render frontend URL if provided
 render_frontend_url = os.getenv("RENDER_FRONTEND_URL")
 if render_frontend_url:
+    # Remove trailing slash if present
+    render_frontend_url = render_frontend_url.rstrip('/')
     allowed_origins.append(render_frontend_url)
+    print(f"[DEBUG] Added frontend URL to CORS: {render_frontend_url}")
+
+print(f"[DEBUG] Allowed CORS origins: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -185,11 +190,13 @@ IMPORTANT INSTRUCTIONS:
         }
         
         print(f"[DEBUG] Upload completed successfully, total elapsed: {time.time() - start_time:.2f}s")
-        return {
+        response_data = {
             "session_id": session_id,
             "placeholders": placeholders,
             "message": assistant_message
         }
+        print(f"[DEBUG] Response data size: session_id={len(session_id)}, message_length={len(assistant_message) if assistant_message else 0}, placeholders_count={len(placeholders)}")
+        return response_data
     
     except HTTPException:
         # Re-raise HTTP exceptions as-is
