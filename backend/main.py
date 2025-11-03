@@ -69,9 +69,27 @@ class QuestionResponse(BaseModel):
     session_id: str
     placeholders_filled: List[str] = []
 
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {
+        "status": "ok",
+        "message": "Legal Document Filler API is running",
+        "environment": "production" if os.getenv("RENDER") else "development"
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy"}
+
 @app.post("/upload")
 async def upload_document(file: UploadFile = File(...)):
     """Upload a document and create an assistant to analyze it"""
+    import time
+    start_time = time.time()
+    print(f"[DEBUG] Upload started at {start_time}")
+    
     if not file.filename.endswith(DOCX_EXTENSION):
         raise HTTPException(status_code=400, detail=f"Only {DOCX_EXTENSION} files are supported")
     
@@ -107,12 +125,21 @@ IMPORTANT INSTRUCTIONS:
         gpt_service.send_message(thread_id, initial_message, file_ids=[file_id])
         
         # Run assistant
+        print(f"[DEBUG] Running assistant, elapsed: {time.time() - start_time:.2f}s")
         run_id = gpt_service.run_assistant(thread_id, assistant_id)
         
-        # Wait for response
-        run_result = gpt_service.wait_for_run(thread_id, run_id)
+        # Wait for response (with timeout handling)
+        print(f"[DEBUG] Starting wait_for_run, elapsed: {time.time() - start_time:.2f}s")
+        run_result = gpt_service.wait_for_run(thread_id, run_id, timeout=60)
+        print(f"[DEBUG] wait_for_run completed, elapsed: {time.time() - start_time:.2f}s, status: {run_result.get('status')}")
         
-        if run_result["status"] == "rate_limited":
+        if run_result["status"] == "timeout":
+            print(f"[DEBUG] OpenAI call timed out after {time.time() - start_time:.2f}s")
+            raise HTTPException(
+                status_code=504,
+                detail="The document analysis is taking longer than expected. Please try again with a smaller document or wait a moment."
+            )
+        elif run_result["status"] == "rate_limited":
             error_info = run_result.get('error', {})
             wait_time = error_info.get('wait_time', 5)
             error_msg = error_info.get('message', 'Rate limit exceeded')
@@ -157,13 +184,20 @@ IMPORTANT INSTRUCTIONS:
             "is_complete": False
         }
         
+        print(f"[DEBUG] Upload completed successfully, total elapsed: {time.time() - start_time:.2f}s")
         return {
             "session_id": session_id,
             "placeholders": placeholders,
             "message": assistant_message
         }
     
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
+        print(f"[ERROR] Upload failed after {time.time() - start_time:.2f}s: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
 
 @app.post("/ask-question", response_model=QuestionResponse)
@@ -506,10 +540,6 @@ async def download_docx(session_id: str):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename="completed_document.docx"
     )
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn

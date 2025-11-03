@@ -52,6 +52,7 @@ function App() {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+        timeout: 120000, // 120 seconds timeout (2 minutes)
       });
 
       const newSessionId = response.data.session_id;
