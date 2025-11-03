@@ -479,8 +479,26 @@ function App() {
             <div className="upload-box">
               {!uploading && (
                 <>
-                  <h2>Upload Document</h2>
-                  <p>Please upload a .docx file containing your legal document draft</p>
+                  <h2>Legal Document Filler</h2>
+                  <div className="app-description">
+                    <p className="description-main">
+                      Upload your legal document template and let our AI assistant help you fill in all the placeholders through a simple conversation.
+                    </p>
+                    <div className="description-steps">
+                      <div className="step-item">
+                        <span className="step-number">1</span>
+                        <span className="step-text">Upload your .docx document with placeholders</span>
+                      </div>
+                      <div className="step-item">
+                        <span className="step-number">2</span>
+                        <span className="step-text">Answer questions about the missing information</span>
+                      </div>
+                      <div className="step-item">
+                        <span className="step-number">3</span>
+                        <span className="step-text">Download your completed document</span>
+                      </div>
+                    </div>
+                  </div>
                   <input
                     type="file"
                     accept=".docx"
@@ -577,6 +595,13 @@ function App() {
               {/* Chat Side */}
               <div className="conversation-panel">
                 <div className="conversation-box">
+                  <div className="chat-info-note">
+                    <span className="info-icon">i</span>
+                    <span className="info-text">
+                      If the AI generates incorrect responses or doesn't work as intended, please upload the document again.
+                    </span>
+                  </div>
+                  
                   {!isComplete && !generating && (
                     <div className="generate-document-header">
                       <button
@@ -746,6 +771,15 @@ function App() {
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+            
+            <div className="complete-info-wrapper">
+              <div className="chat-info-note">
+                <span className="info-icon">i</span>
+                <span className="info-text">
+                  If the AI generates incorrect responses or doesn't work as intended, please upload the document again.
+                </span>
               </div>
             </div>
             
